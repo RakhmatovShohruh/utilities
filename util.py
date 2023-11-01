@@ -1,15 +1,13 @@
-import argparse
-import json
 import os
+import cv2
 import random
 import shutil
+from PIL import Image
 from collections import Counter
-
-import cv2
 
 
 def get_sub_imgs(path, target_path):
-    extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff']
+    extensions = ['.xml', '.jpeg', '.png', '.gif', '.bmp', '.tiff']
 
     os.makedirs(target_path, exist_ok=True)
     for dirs, _, files in os.walk(path):
@@ -28,18 +26,14 @@ def get_sub_imgs(path, target_path):
                     shutil.move(source, target)
 
 
-# Usage
-# get_sub_imgs('data', 'data2')
-
-
 def verify_name_pairs(image_path, label_path):
     # List directory contents
     images = os.listdir(image_path)
     labels = os.listdir(label_path)
 
     # Extract filenames without extensions and filter based on desired extensions
-    image_names = [os.path.splitext(im)[0] for im in images if im.endswith(('.jpg', '.png', '.jpeg'))]
-    label_names = [os.path.splitext(lab)[0] for lab in labels if lab.endswith('.json')]
+    image_names = [os.path.splitext(im)[0] for im in images if im.endswith(('.png'))]
+    label_names = [os.path.splitext(lab)[0] for lab in labels if lab.endswith('.pts')]
 
     # Find unmatched image and label names
     diff_img_label = list((Counter(image_names) - Counter(label_names)).elements())
@@ -54,17 +48,13 @@ def verify_name_pairs(image_path, label_path):
         print('OK...')
 
 
-# Usage
-# verify_name_pairs('split_test', 'split_test')
-
-
 def visualize_landmarks(image_name, pts_name, output_name=None):
     with open(pts_name, 'r') as file:
         content = file.readlines()
 
     start_idx = next(i for i, line in enumerate(content) if "{" in line) + 1
     end_idx = next(i for i, line in enumerate(content) if "}" in line)
-    landmarks_data = content[start_idx:end_idx]
+    landmarks_data = content[3:-3]
 
     landmarks = [tuple(map(float, line.split())) for line in landmarks_data]
 
@@ -72,7 +62,7 @@ def visualize_landmarks(image_name, pts_name, output_name=None):
 
     for idx, (x, y) in enumerate(landmarks):
         cv2.circle(img, (int(x), int(y)), 2, (0, 0, 255), -1)  # Drawing a red circle for each point
-        cv2.putText(img, str(idx), (int(x) + 2, int(y)), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+        cv2.putText(img, str(idx+1), (int(x) + 2, int(y)), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
 
     cv2.imshow("Face Landmarks", img)
 
@@ -83,13 +73,10 @@ def visualize_landmarks(image_name, pts_name, output_name=None):
     cv2.destroyAllWindows()
 
 
-# Usage
-# visualize_landmarks(image_name, pts_name, '1.jpg')
-
 
 def split_dataset(main_folder, train_folder, test_folder, test_ratio=0.2):
-    image_extensions = ['.jpg']
-    label_extensions = ['.json']
+    image_extensions = ['.png']
+    label_extensions = ['.pts']
     # Ensure the train and test folders exist
     os.makedirs(train_folder, exist_ok=True)
     os.makedirs(test_folder, exist_ok=True)
@@ -123,14 +110,6 @@ def split_dataset(main_folder, train_folder, test_folder, test_ratio=0.2):
     move_files(test_files, main_folder, test_folder)
 
 
-# Usage
-# main_dir = "split"
-# train_dir = "split_train"
-# test_dir = "split_test"
-#
-# split_dataset(main_dir, train_dir, test_dir)
-
-
 def collect_files(src1, src2, destination):
     os.makedirs(destination, exist_ok=True)
 
@@ -144,107 +123,64 @@ def collect_files(src1, src2, destination):
     copy_from_source(src2)
 
 
-# Usage
-# image_folder = "temp/image"
-# label_folder = "temp/anno"
-# destination_folder = "temp2"
-#
-# collect_files(image_folder, label_folder, destination_folder)
+def convert_PNG(folder_path):
+    supported_formats = ("jpeg", "jpg", 'JPG', 'JPEG')
+
+    converted_and_removed_count = 0
+    i = 0
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            i += 1
+            if file.lower().endswith(supported_formats):
+                try:
+                    file_path = os.path.join(root, file)
+
+                    img = Image.open(file_path)
+
+                    new_file_path = os.path.splitext(file_path)[0] + ".png"
+
+                    img.save(new_file_path, "PNG")
+
+                    os.remove(file_path)
+
+                    converted_and_removed_count += 1
+
+                    print(f"Converted and removed: {file_path} -> {new_file_path}")
+                except Exception as e:
+                    print(f"Failed to convert and remove {file}: {e}")
+            print('i = ', i)
+    print(f"Total images converted and removed: {converted_and_removed_count}")
 
 
-def json2pts(root, dest_dir):
-    os.makedirs(dest_dir, exist_ok=True)
+def move_different_files(images_folder, labels_folder, different_folder):
+    if not os.path.exists(different_folder):
+        os.makedirs(different_folder)
 
-    def json_to_pts(json_data):
-        keypoints = json_data["ObjectInfo"]["KeyPoints"]["Points"]
+    image_files = set(os.listdir(images_folder))
+    label_files = set(os.listdir(labels_folder))
 
-        if len(keypoints) % 2 != 0:
-            raise ValueError("Unexpected number of landmark points. They should be in pairs.")
+    image_names = {os.path.splitext(file)[0] for file in image_files}
+    label_names = {os.path.splitext(file)[0] for file in label_files}
 
-        n_points = len(keypoints) // 2
+    different_images = image_names - label_names
+    different_files = [file for file in image_files if os.path.splitext(file)[0] in different_images]
 
-        # Convert JSON data to PTS format
-        pts_data = []
-        pts_data.append("version: 1")
-        pts_data.append(f"n_points:  {n_points}")
-        pts_data.append("{")
-        for i in range(0, len(keypoints), 2):
-            x = keypoints[i]
-            y = keypoints[i + 1]
-            pts_data.append(f"{x} {y}")
-        pts_data.append("}")
-
-        return "\n".join(pts_data)
-
-    # Walk through the root directory
-    for dirpath, _, filenames in os.walk(root):
-        for filename in filenames:
-            if filename.endswith('.json'):
-                json_path = os.path.join(dirpath, filename)
-
-                with open(json_path, 'r') as json_file:
-                    data = json.load(json_file)
-
-                pts_content = json_to_pts(data)
-                pts_path = os.path.join(dest_dir, filename.replace('.json', '.pts'))
-
-                with open(pts_path, 'w') as pts_file:
-                    pts_file.write(pts_content)
+    for file in different_files:
+        src = os.path.join(images_folder, file)
+        dest = os.path.join(different_folder, file)
+        shutil.move(src, dest)
+        print(f"Moved: {file}")
 
 
-# Usage
-# root_dir = "./temp/anno"
-# dest_dir = "./temp/pts"
-# json2pts(root_dir, dest_dir)
+def rename_files(directory):
+    for foldername in os.listdir(directory):
+        folder_path = os.path.join(directory, foldername)
+        if os.path.isdir(folder_path):
+            for filename in os.listdir(folder_path):
+                old_file_path = os.path.join(folder_path, filename)
+                new_filename = filename.replace(' ', '')
+                new_file_path = os.path.join(folder_path, new_filename)
 
-if __name__ == "__main__":
-    a = argparse.ArgumentParser(description='Data Processing for Landmark points')
-    a.add_argument("--path1", help="path to the data")
-    a.add_argument("--path2", help="path to the data")
-    a.add_argument("--path3", help="path to the data")
-    a.add_argument("--image-path", help="image path")
-    a.add_argument("--label-path", help="label path")
-    a.add_argument("--mode", help="json2pts", required=True)
-
-    args = a.parse_args()
-    print(args)
-
-    if args.mode == "json2pts":
-        print("===== Convert Json To pts =====")
-        json2pts(args.path1, args.path2)
-
-    elif args.mode == "collect_files":
-        print("===== Collecting Files =====")
-        collect_files(args.path1, args.path2, args.path3)
-        """
-        copy (not move) all the files from the two source directories to the destination directory. 
-        """
-    elif args.mode == "split":
-        print("===== Split Dataset =====")
-        split_dataset(args.path1, args.path2, args.path3)
-        """
-        split data into train and test folder (Train-80%, Test-20%)
-        """
-    elif args.mode == "visualize":
-        print("===== Visualizing Facial Keypoints =====")
-        visualize_landmarks(args.image_path, args.label_path)
-        """
-        Visualize facial landmarks on an image and optionally save the output.
-        """
-    elif args.mode == "verify_names":
-        print("===== Visualizing Facial Keypoints =====")
-        visualize_landmarks(args.image_path, args.label_path)
-        """
-        Verify name of files (compare image name with label name)
-        """
-    elif args.mode == "get_sub_image":
-        print("===== collect sub folders' images=====")
-        get_sub_imgs(args.path1, args.path2)
-        """
-        Collecting files from sub folders
-        """
-
-    else:
-        print("mode error : You can only use video information inquiry and video frame extraction.")
-
-ChatGPT
+                if old_file_path != new_file_path:
+                    os.rename(old_file_path, new_file_path)
+                    print(f"Renamed: {old_file_path} -> {new_file_path}")
