@@ -1,3 +1,6 @@
+
+Facial Landmark Preprocessing Toolkit
+
 **Table of Contents:**
 * **Introduction**
 * **Functions**
@@ -7,7 +10,6 @@
 * * split_dataset
 * * collect_files
 * * json2pts
-* **Usage**
 
 
 **Introduction:**
