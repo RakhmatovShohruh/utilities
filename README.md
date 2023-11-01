@@ -35,13 +35,5 @@ Collects (copies, not moves) all files from two source directories and places th
 6. **json2pts:**
 Converts JSON label files to PTS format, making them suitable for use in facial landmark recognition tasks.
 
-**Here are some examples of how to use the script in different modes:**
-* Converting JSON label files to PTS format:      
-```bash
-$ python script.py --mode json2pts --path1 ./data --path2 ./output
-```
-* Visualizing facial landmarks on an image:
-```bash
-$ python script.py --mode visualize --image-path ./image.jpg --label-path ./labels.json
-```
+
 **_Feel free to adapt these commands to your specific use case._**
